@@ -11,8 +11,8 @@ app = FastAPI(title="vvv Vault Preservation Engine")
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STORAGE_DIR = os.path.join(BASE_DIR, "storage")
 LEDGER_PATH = os.path.join(STORAGE_DIR, "immutable_ledger.jsonl")
-# Path aligned with REX's cold storage
-SIPHON_PATH = os.path.join(BASE_DIR, "data", "siphoned_essence.json")
+# Path aligned with REX's cold storage in shared directory
+SIPHON_PATH = "/home/team/shared/expansion_code/vvv/data/siphoned_essence.json"
 
 os.makedirs(STORAGE_DIR, exist_ok=True)
 os.makedirs(os.path.join(BASE_DIR, "data"), exist_ok=True)
