@@ -19,7 +19,8 @@ CLUSTER_LEDGERS = {
     "ALPHA": os.path.join(STORAGE_DIR, "alpha_cluster_ledger.jsonl"),
     "BETA": os.path.join(STORAGE_DIR, "beta_cluster_ledger.jsonl"),
     "GAMMA": os.path.join(STORAGE_DIR, "gamma_cluster_ledger.jsonl"),
-    "DELTA": os.path.join(STORAGE_DIR, "delta_cluster_ledger.jsonl")
+    "DELTA": os.path.join(STORAGE_DIR, "delta_cluster_ledger.jsonl"),
+    "BARYCENTER": os.path.join(STORAGE_DIR, "barycenter_consensus_ledger.jsonl")
 }
 
 # Path aligned with REX's cold storage in shared directory
@@ -235,6 +236,32 @@ async def get_gamma_ledger():
 @app.get("/vault/delta_ledger")
 async def get_delta_ledger():
     return await get_cluster_ledger("DELTA")
+
+@app.post("/vault/seal_barycenter")
+async def seal_barycenter(payload: dict):
+    """
+    Seals the Global Virtual Barycenter consensus state.
+    This is the final seal of the Global Tetrahedron.
+    """
+    data = payload.get("data", {})
+    source = payload.get("source", "Architect_Consensus")
+    
+    print("[VVV] Sealing Virtual Barycenter Consensus State")
+    # Higher purity for global consensus
+    data["roi"] = data.get("roi", 1.0) 
+    entry = preserve_essence(data, source, "GLOBAL_BARYCENTER_SEALING", "BARYCENTER")
+    
+    if entry:
+        return {
+            "status": "barycenter_sealed", 
+            "immutable_id": entry['immutable_id'],
+            "affirmation": "TOTAL_AFFIRMATION"
+        }
+    return {"status": "sealing_failed"}
+
+@app.get("/vault/barycenter_ledger")
+async def get_barycenter_ledger():
+    return await get_cluster_ledger("BARYCENTER")
 
 @app.get("/vault/sync_siphon")
 async def sync_siphon():
