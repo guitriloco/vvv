@@ -14,8 +14,14 @@ STORAGE_DIR = os.path.join(BASE_DIR, "storage")
 ETERNAL_LEDGER_PATH = os.path.join(STORAGE_DIR, "eternal_ledger.jsonl")
 # Standard Ledger for High Grade essence
 STANDARD_LEDGER_PATH = os.path.join(STORAGE_DIR, "standard_ledger.jsonl")
-# Alpha Cluster Initial State Ledger
-ALPHA_CLUSTER_LEDGER_PATH = os.path.join(STORAGE_DIR, "alpha_cluster_ledger.jsonl")
+# Cluster Ledgers mapping
+CLUSTER_LEDGERS = {
+    "ALPHA": os.path.join(STORAGE_DIR, "alpha_cluster_ledger.jsonl"),
+    "BETA": os.path.join(STORAGE_DIR, "beta_cluster_ledger.jsonl"),
+    "GAMMA": os.path.join(STORAGE_DIR, "gamma_cluster_ledger.jsonl"),
+    "DELTA": os.path.join(STORAGE_DIR, "delta_cluster_ledger.jsonl")
+}
+
 # Path aligned with REX's cold storage in shared directory
 SIPHON_PATH = "/home/team/shared/expansion_code/vvv/data/siphoned_essence.json"
 
@@ -62,15 +68,17 @@ def apply_zkp(content: str, grade: str, purity: float, context: str = "generic")
     
     return proof, is_valid
 
-def preserve_essence(data: dict, source: str, context: str = "general_preservation"):
+def preserve_essence(data: dict, source: str, context: str = "general_preservation", cluster_id: str = None):
     content = json.dumps(data, sort_keys=True)
     
     # 1. Distill Purity
     purity, grade, ledger_path = PurityDistiller.distill(data)
     
-    # If context is Alpha Cluster, use the specific ledger
-    if context == "ALPHA_CLUSTER_SEALING":
-        ledger_path = ALPHA_CLUSTER_LEDGER_PATH
+    # If cluster_id is provided, use the specific cluster ledger
+    if cluster_id and cluster_id.upper() in CLUSTER_LEDGERS:
+        ledger_path = CLUSTER_LEDGERS[cluster_id.upper()]
+    elif context == "ALPHA_CLUSTER_SEALING":
+        ledger_path = CLUSTER_LEDGERS["ALPHA"]
     
     # 2. Yield-Aware ZKP Verification
     proof, is_valid = apply_zkp(content, grade, purity, context)
@@ -86,11 +94,12 @@ def preserve_essence(data: dict, source: str, context: str = "general_preservati
         "timestamp": time.time(),
         "source": source,
         "context": context,
+        "cluster_id": cluster_id,
         "purity": purity,
         "grade": grade,
         "content_hash": hashlib.sha256(content.encode()).hexdigest(),
         "zkp_proof": proof,
-        "immutable_id": hashlib.sha256(f"{content}_{proof}_{purity}_{context}".encode()).hexdigest()
+        "immutable_id": hashlib.sha256(f"{content}_{proof}_{purity}_{context}_{cluster_id}".encode()).hexdigest()
     }
     
     # Append to prioritized ledger file
@@ -113,7 +122,9 @@ async def vault_pulse():
     purity_level = 0.0
     total_entries = 0
     
-    for l_path in [ETERNAL_LEDGER_PATH, ALPHA_CLUSTER_LEDGER_PATH]:
+    check_paths = [ETERNAL_LEDGER_PATH] + list(CLUSTER_LEDGERS.values())
+    
+    for l_path in check_paths:
         if os.path.exists(l_path):
             with open(l_path, "r") as f:
                 for line in f:
@@ -137,9 +148,10 @@ async def ingest_wealth(payload: dict):
     source = payload.get("source", "Unknown")
     data = payload.get("data", {})
     context = payload.get("context", "general_preservation")
+    cluster_id = payload.get("cluster_id")
     
     print(f"[VVV] Ingesting technical wealth from {source} [{context}]")
-    entry = preserve_essence(data, source, context)
+    entry = preserve_essence(data, source, context, cluster_id)
     
     if entry:
         return {
@@ -157,7 +169,7 @@ async def seal_cluster(payload: dict):
     data = payload.get("data", {})
     
     print(f"[VVV] Sealing Cluster State: {cluster_id}")
-    entry = preserve_essence(data, f"CLUSTER_{cluster_id}", "ALPHA_CLUSTER_SEALING")
+    entry = preserve_essence(data, f"CLUSTER_{cluster_id}", f"{cluster_id}_CLUSTER_SEALING", cluster_id)
     
     if entry:
         return {"status": "cluster_sealed", "immutable_id": entry['immutable_id']}
@@ -167,6 +179,7 @@ async def seal_cluster(payload: dict):
 async def protocol_callback(payload: dict):
     event = payload.get("event")
     data = payload.get("data")
+    cluster_id = payload.get("cluster_id")
     
     print(f"[VVV] Received protocol signal: {event}")
     
@@ -175,7 +188,7 @@ async def protocol_callback(payload: dict):
     
     if event == "PROTOCOL_COMPLETE" or event == "ATOM_SHIFT_COMPLETE":
         if purity >= 0.90:
-            entry = preserve_essence(data, f"Signal_{event}", "Omni-Pulse_Sync")
+            entry = preserve_essence(data, f"Signal_{event}", "Omni-Pulse_Sync", cluster_id)
             if entry:
                 return {"status": "essence_archived", "entry": entry}
         else:
@@ -193,14 +206,35 @@ async def get_eternal_ledger():
                 entries.append(json.loads(line))
     return entries
 
-@app.get("/vault/alpha_ledger")
-async def get_alpha_ledger():
+@app.get("/vault/cluster_ledger/{cluster_id}")
+async def get_cluster_ledger(cluster_id: str):
+    cluster_id = cluster_id.upper()
+    if cluster_id not in CLUSTER_LEDGERS:
+        return {"error": "Invalid cluster_id"}
+    
+    ledger_path = CLUSTER_LEDGERS[cluster_id]
     entries = []
-    if os.path.exists(ALPHA_CLUSTER_LEDGER_PATH):
-        with open(ALPHA_CLUSTER_LEDGER_PATH, "r") as f:
+    if os.path.exists(ledger_path):
+        with open(ledger_path, "r") as f:
             for line in f:
                 entries.append(json.loads(line))
     return entries
+
+@app.get("/vault/alpha_ledger")
+async def get_alpha_ledger():
+    return await get_cluster_ledger("ALPHA")
+
+@app.get("/vault/beta_ledger")
+async def get_beta_ledger():
+    return await get_cluster_ledger("BETA")
+
+@app.get("/vault/gamma_ledger")
+async def get_gamma_ledger():
+    return await get_cluster_ledger("GAMMA")
+
+@app.get("/vault/delta_ledger")
+async def get_delta_ledger():
+    return await get_cluster_ledger("DELTA")
 
 @app.get("/vault/sync_siphon")
 async def sync_siphon():
@@ -215,7 +249,7 @@ async def sync_siphon():
         
         # Collect existing hashes from all ledgers
         existing_hashes = set()
-        for l_path in [ETERNAL_LEDGER_PATH, STANDARD_LEDGER_PATH, ALPHA_CLUSTER_LEDGER_PATH]:
+        for l_path in [ETERNAL_LEDGER_PATH, STANDARD_LEDGER_PATH] + list(CLUSTER_LEDGERS.values()):
             if os.path.exists(l_path):
                 with open(l_path, "r") as f:
                     for line in f:
